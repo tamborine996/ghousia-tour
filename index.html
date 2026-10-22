@@ -175,7 +175,7 @@ new GLTFLoader().load(`model.glb?v=${Date.now()}`, (gltf) => {
   if (look) {
     setupLighting(renderer, scene, look, { hemi, ambient, sun }); applyLook(scene, look, renderer);
     setupPost(renderer, scene, camera, look).then((c) => { if (!c) return; post.composer = c; const b = document.getElementById('fx');
-      b.hidden = false; b.onclick = () => setFx(!post.on); setFx(!lowMem && params.get('fx') !== '0'); }).catch((e) => console.warn('FX unavailable', e));
+      b.hidden = false; b.onclick = () => setFx(!post.on); setFx(params.get('fx') === '1'); })   // off by default: it greys the sky and adds little to the baked look.catch((e) => console.warn('FX unavailable', e));
   }
   setDoors(false);
   goTo(PLACES[0]);
