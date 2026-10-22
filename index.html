@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#1b1d21">
+<title>Ghousia Masjid Tour</title>
+<style>
+  :root { --ink:#f4f2ec; --panel:rgba(20,22,26,.72); --accent:#2b8a5f; }
+  html, body { margin:0; height:100%; background:#1b1d21; overflow:hidden; touch-action:none; -webkit-user-select:none; user-select:none;
+    font:14px/1.3 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color:var(--ink); }
+  canvas { display:block; }
+  #places { position:fixed; top:env(safe-area-inset-top,0); left:0; right:0; display:flex; gap:6px; padding:8px; overflow-x:auto; scrollbar-width:none; }
+  #places::-webkit-scrollbar { display:none; }
+  button { flex:none; border:0; border-radius:999px; padding:8px 13px; background:var(--panel); color:var(--ink); font:inherit; backdrop-filter:blur(6px); }
+  button.on { background:var(--accent); }
+  #tools { position:fixed; right:10px; bottom:calc(14px + env(safe-area-inset-bottom,0)); display:flex; flex-direction:column; gap:6px; }
+  #stick { position:fixed; left:22px; bottom:calc(26px + env(safe-area-inset-bottom,0)); width:120px; height:120px; border-radius:50%;
+    background:rgba(255,255,255,.08); border:2px solid rgba(255,255,255,.25); pointer-events:none; }
+  #knob { position:absolute; left:35px; top:35px; width:50px; height:50px; border-radius:50%; background:rgba(255,255,255,.45); }
+  #where { position:fixed; left:50%; top:calc(56px + env(safe-area-inset-top,0)); transform:translateX(-50%); background:var(--panel); padding:4px 10px; border-radius:8px; font-size:13px; opacity:.9; white-space:nowrap; }
+  #loading { position:fixed; inset:0; display:grid; place-items:center; background:#1b1d21; text-align:center; padding:24px; }
+  #loading small { display:block; opacity:.7; margin-top:6px; }
+  #hint { position:fixed; left:50%; bottom:calc(160px + env(safe-area-inset-bottom,0)); transform:translateX(-50%); background:var(--panel); padding:6px 12px; border-radius:8px; font-size:13px; transition:opacity 1s; text-align:center; }
+</style>
+</head>
+<body>
+<div id="places"></div>
+<div id="where"></div>
+<div id="stick"><div id="knob"></div></div>
+<div id="tools"><button id="fx" hidden>FX</button><button id="look" hidden>Real</button><button id="run">Walk</button><button id="doors">Open doors</button></div>
+<div id="hint">Left thumb: walk · Right thumb: look<br>Desktop: WASD + drag · Shift to run</div>
+<div id="loading"><div>Loading Ghousia Masjid…<small id="pct">0%</small><small>Concept model · not surveyed</small></div></div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+  "three/examples/jsm/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+  "three-mesh-bvh": "https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.8.3/build/index.module.js",
+  "postprocessing": "https://cdn.jsdelivr.net/npm/postprocessing@6.37.0/build/index.js",
+  "n8ao": "https://cdn.jsdelivr.net/npm/n8ao@2.0.1/dist/N8AO.js"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { MeshBVH } from 'three-mesh-bvh';
+import { loadLook, setupLighting, applyLook, setupPost } from './look.js';
+
+// Places use the model frame: x east (into the building), z south, y up; yaw 0 = facing east.
+const PLACES = [
+  { name: 'Street', at: [-12.3, 0.12, -4.0], yaw: 0, pitch: 0.05 },
+  { name: 'Gate', at: [-3.6, 0.12, -4.3], yaw: 0.35 },
+  { name: 'Veranda', at: [0.9, 0.72, 2.6], yaw: Math.PI / 2 },
+  { name: 'Entrance', at: [1.15, 0.72, -1.75], yaw: 0.6 },
+  { name: 'Corridor', at: [2.4, 0.72, -0.35], yaw: 0 },
+  { name: 'Wudu', at: [7.0, 0.72, -0.35], yaw: -Math.PI / 2 },
+  { name: 'Office', at: [7.25, 0.72, -0.4], yaw: Math.PI / 2 },
+  { name: 'Hall', at: [8.6, 0.72, -0.35], yaw: 0 },
+  { name: 'Hall back wall', at: [13.5, 0.72, 0.4], yaw: Math.PI },
+  { name: 'Mihrab', at: [20.5, 0.72, -0.2], yaw: 0 },
+  { name: 'Stairs', at: [23.2, 0.72, 2.45], yaw: 0 },
+  { name: 'Upstairs', at: [30.0, 3.42, 0.6], yaw: 0.15 },
+  { name: 'Upper right', at: [30.6, 3.42, 4.6], yaw: -0.35 },
+  { name: 'Yard', at: [44.5, 2.67, 0.0], yaw: Math.PI },
+];
+const ZONES = [
+  ['Street', -40, -4.75, -60, 120], ['Forecourt & ramp', -4.75, 0, -6, 4], ['Entrance & shoes', 0.65, 1.81, -3.7, -1.3], ['Veranda', 0, 1.81, -4, 4],
+  ['Entrance & shoes', 1.81, 3.9, -3.6, -0.95], ['Corridor', 1.81, 8, -0.95, 0.25], ['Toilets', 1.81, 4, 0.25, 3.6],
+  ['Small office (locked)', 3.9, 5.6, -3.6, -0.95], ['Office', 5.6, 8, -3.6, -0.95], ['Wudu area', 4, 8, 0.25, 3.6],
+  ['Main prayer hall', 8, 24, -3.6, 3.6],
+  // [name, x0, x1, z0, z1, floorFrom, floorTo]: the rear is a raised level ~2.0 m above the hall.
+  ['Store (behind north qibla door)', 24, 25.2, -3.6, 1.8, 0, 2], ['Main stair', 24, 29.24, 1.78, 3.0, 0, 9],
+  ['Upper prayer room', 24, 36.3, -3.6, 6.3, 2.5, 9], ['Not filmed (behind the upper qibla wall)', 36.3, 39.6, -3.6, 3.6, 2.5, 9],
+  ['Rear yard', 39.6, 46, -4, 4], ['Side yard (upper level)', 24, 40, 6.3, 8.2, 2.5, 9],
+];
+const EYE = 1.6, RADIUS = 0.28, SEG = 1.25, WALK = 1.5, RUN = 3.2, GRAVITY = -20;
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.6));
+renderer.setSize(innerWidth, innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.body.prepend(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#a9cdec');
+scene.fog = new THREE.Fog('#a9cdec', 60, 180);
+const hemi = new THREE.HemisphereLight('#ffffff', '#d9d3c4', 1.5), ambient = new THREE.AmbientLight('#ffffff', 0.45);
+scene.add(hemi, ambient);
+const sun = new THREE.DirectionalLight('#fff6e6', 1.8); sun.position.set(-30, 50, -20); scene.add(sun);
+const fovFor = () => (innerWidth < innerHeight ? 85 : 70);
+const camera = new THREE.PerspectiveCamera(fovFor(), innerWidth / innerHeight, 0.05, 400);
+camera.rotation.order = 'YXZ';
+
+const player = { pos: new THREE.Vector3(), vel: new THREE.Vector3(), yaw: 0, pitch: 0, grounded: false };
+const doorNodes = [], doors = [];   // Pascal door nodes; tour-built leaves { pivot, base, open, angle, target }
+window.__tour = { player, doors };   // debugging/automation hook
+// Doors the user says are always held open: their Pascal leaf is hidden; open leaves are modelled as meshes.
+// doors held open (their leaves are drawn open in the detail mesh): every door in these walls; door ids change on rebuilds, wall ids do not
+const ALWAYS_OPEN_WALLS = new Set(['wall_f_hall_west']);
+const heldOpen = (o) => /^door_/.test(o?.name ?? '') && ALWAYS_OPEN_WALLS.has(o.parent?.name ?? '');
+let collider = null;
+
+// ---- "Real" look: Blender-baked light and materials (tools/blender_bake.py -> baked/). The Pascal meshes it replaces stay
+// loaded (hidden) as the collider and for the Simple look. ?look=simple skips it; ?q=2k (or a low-memory phone) loads 2K atlases.
+const ELEMENT = /^(slab_|wall_|ceiling_|imesh_|item_|stair_|window_|door_|fence_|roof|rseg_|site_)/;
+const params = new URLSearchParams(location.search);
+const lowMem = params.get('q') === '2k' || (navigator.deviceMemory !== undefined && navigator.deviceMemory < 6);
+const real = { replaces: null, replaced: [], baked: null, on: false };
+Object.assign(window.__tour, { scene, real, camera });
+// Realtime look (viewer/look.json + look.js): textured materials, image-based light, AgX. ?look=plain keeps the flat colours.
+const lookReady = params.get('look') === 'plain' ? Promise.resolve(null) : loadLook(`look.json?v=${Date.now()}`);
+const manifestReady = ['simple', 'plain'].includes(params.get('look')) ? Promise.resolve(null)
+  : fetch(`baked/manifest.json?v=${Date.now()}`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+
+// three.js de-duplicates node names with a numeric suffix (e.g. "cutout_91").
+const isHidden = (n) => /^(collision-mesh|cutout)(_\d+)?$/.test(n) || /^(zone_|spawn_)/.test(n);
+const noCollide = (n) => /^(door_|window_|imesh_|roof|rseg_|ceiling_|item_|fence_)/.test(n);
+
+// Replace a stair mesh with a sloped quad over its footprint, rising along whichever horizontal axis its height follows.
+function rampFor(o) {
+  const g = o.geometry.clone(); g.applyMatrix4(o.matrixWorld);
+  const p = g.attributes.position, n = p.count, b = new THREE.Box3().setFromBufferAttribute(p);
+  const corr = (axis) => { let sa = 0, sy = 0, saa = 0, say = 0;
+    for (let i = 0; i < n; i++) { const a = p.getComponent(i, axis), y = p.getY(i); sa += a; sy += y; saa += a * a; say += a * y; }
+    return (say - sa * sy / n) / Math.max(1e-6, saa - sa * sa / n); };
+  const cx = corr(0), cz = corr(2), alongX = Math.abs(cx) >= Math.abs(cz), up = alongX ? cx > 0 : cz > 0;
+  const { min, max } = b, y0 = min.y, y1 = max.y;
+  const h = (a, lo, hi) => ((up ? a === hi : a === lo) ? y1 : y0);
+  const v = alongX
+    ? [[min.x, h(min.x, min.x, max.x), min.z], [max.x, h(max.x, min.x, max.x), min.z], [max.x, h(max.x, min.x, max.x), max.z], [min.x, h(min.x, min.x, max.x), max.z]]
+    : [[min.x, h(min.z, min.z, max.z), min.z], [max.x, h(min.z, min.z, max.z), min.z], [max.x, h(max.z, min.z, max.z), max.z], [min.x, h(max.z, min.z, max.z), max.z]];
+  const r = new THREE.BufferGeometry();
+  r.setAttribute('position', new THREE.Float32BufferAttribute([...v[0], ...v[1], ...v[2], ...v[0], ...v[2], ...v[3]], 3));
+  return r;
+}
+
+Promise.all([manifestReady, lookReady]).then(([manifest, look]) => { real.replaces = manifest ? new Set(manifest.replaces) : null;
+new GLTFLoader().load(`model.glb?v=${Date.now()}`, (gltf) => {
+  const root = gltf.scene;
+  root.updateMatrixWorld(true);
+  const geos = [];
+  root.traverse((o) => {
+    const chain = []; for (let p = o; p; p = p.parent) chain.push(p.name || '');
+    let open = false; for (let p = o; p; p = p.parent) if (heldOpen(p)) open = true;
+    if (chain.some(isHidden) || open) { o.visible = false; return; }
+    // Static colour overlays for closed doors (used by Blender) are replaced by the tour's own swinging leaves.
+    if (chain.some((n) => /^imesh_\w*doors$/.test(n))) { o.visible = false; return; }
+    if (/^door_/.test(o.name) && !/^door_/.test(o.parent?.name ?? '')) doorNodes.push(o);
+    if (!o.isMesh) return;
+    o.frustumCulled = true;
+    if (real.replaces?.has(chain.find((n) => ELEMENT.test(n)))) real.replaced.push(o);
+    if (o.material) for (const m of [].concat(o.material)) { m.side = THREE.DoubleSide; if (m.map) m.map.anisotropy = 4; }
+    if (chain.some(noCollide)) return;
+    // Stairs collide as a smooth ramp (the capsule cannot step up 18 cm risers).
+    if (chain.some((n) => /^stair_/.test(n))) { geos.push(rampFor(o)); return; }
+    let g = o.geometry.clone(); g.applyMatrix4(o.matrixWorld);
+    for (const k of Object.keys(g.attributes)) if (k !== 'position') g.deleteAttribute(k);
+    g = g.index ? g.toNonIndexed() : g; g.morphAttributes = {};
+    geos.push(g);
+  });
+  scene.add(root);
+  // Sign board: the Pascal export drops this roof-level wall, so it is added from the artwork file.
+  new THREE.TextureLoader().load('sign.png', (t) => { t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+    const sign = new THREE.Mesh(new THREE.PlaneGeometry(6.8, 1.1), new THREE.MeshStandardMaterial({ map: t, roughness: 0.4, side: THREE.DoubleSide }));
+    sign.position.set(1.55, 4.95, 0.2); sign.rotation.y = -Math.PI / 2; scene.add(sign); });
+  const merged = mergeGeometries(geos, false);
+  merged.boundsTree = new MeshBVH(merged);
+  collider = new THREE.Mesh(merged); collider.visible = false;
+  for (const d of doorNodes) buildDoor(d, merged.boundsTree);
+  if (look) {
+    setupLighting(renderer, scene, look, { hemi, ambient, sun }); applyLook(scene, look, renderer);
+    setupPost(renderer, scene, camera, look).then((c) => { if (!c) return; post.composer = c; const b = document.getElementById('fx');
+      b.hidden = false; b.onclick = () => setFx(!post.on); setFx(!lowMem && params.get('fx') !== '0'); }).catch((e) => console.warn('FX unavailable', e));
+  }
+  setDoors(false);
+  goTo(PLACES[0]);
+  document.getElementById('loading').remove();
+  if (manifest) loadReal(manifest); else setTimeout(() => (document.getElementById('hint').style.opacity = 0), 6000);
+}, (e) => { if (e.total) document.getElementById('pct').textContent = Math.round((e.loaded / e.total) * 100) + '%'; },
+   (err) => { document.getElementById('pct').textContent = 'Could not load model: ' + err.message; });
+});
+
+// Baked meshes are merged per atlas (three draw calls) and drawn unlit: the atlases already hold Blender's light and tone mapping.
+function loadReal(manifest) {
+  const hint = document.getElementById('hint');
+  hint.textContent = 'Loading the real look…';
+  new GLTFLoader().load(`baked/${lowMem ? 'baked_2k' : 'baked'}.glb?v=${encodeURIComponent(manifest.created)}`, (g) => {
+    g.scene.updateMatrixWorld(true);
+    const byMat = new Map(), group = new THREE.Group();
+    g.scene.traverse((o) => {
+      if (!o.isMesh) return;
+      const geo = o.geometry.clone(); geo.applyMatrix4(o.matrixWorld);
+      if (/^plain_glass/.test(o.material.name)) {
+        group.add(new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: '#d6e8ef', transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide, toneMapped: false })));
+        return;
+      }
+      for (const k of Object.keys(geo.attributes)) if (k !== 'position' && k !== 'uv') geo.deleteAttribute(k);
+      if (!geo.index) geo.setIndex([...Array(geo.attributes.position.count).keys()]);
+      if (!byMat.has(o.material)) byMat.set(o.material, []);
+      byMat.get(o.material).push(geo);
+    });
+    for (const [m, geos] of byMat) {
+      if (m.map) { m.map.anisotropy = renderer.capabilities.getMaxAnisotropy(); m.map.colorSpace = THREE.SRGBColorSpace; }
+      group.add(new THREE.Mesh(mergeGeometries(geos, false), new THREE.MeshBasicMaterial({ map: m.map, side: THREE.DoubleSide, toneMapped: false })));
+    }
+    real.baked = group; scene.add(group);
+    const btn = document.getElementById('look'); btn.hidden = false; btn.onclick = () => setLook(!real.on);
+    setLook(true);
+    hint.textContent = 'Real look on (button on the right switches to Simple)';
+    setTimeout(() => (hint.style.opacity = 0), 5000);
+  }, (e) => { if (e.total) hint.textContent = `Loading the real look… ${Math.round((e.loaded / e.total) * 100)}%`; },
+     (err) => { hint.textContent = 'Real look unavailable: ' + err.message; setTimeout(() => (hint.style.opacity = 0), 6000); });
+}
+// FX: ambient occlusion + bloom through the composer (look.js setupPost); off = plain render (lighter for weak phones)
+const post = { composer: null, on: false }; window.__tour.post = post;
+function setFx(on) { post.on = on; const b = document.getElementById('fx'); b.textContent = on ? 'FX on' : 'FX off'; b.classList.toggle('on', on); }
+function setLook(on) {
+  real.on = on; for (const o of real.replaced) o.visible = !on; if (real.baked) real.baked.visible = on;
+  const btn = document.getElementById('look'); btn.textContent = on ? 'Real' : 'Simple'; btn.classList.toggle('on', on);
+}
+
+// ---- doors: Pascal's exported leaves are static and uncoloured, so the tour builds its own frame + leaves that swing ----
+// [parent wall name pattern, leaf colour, style]; evidence: 16 Oct videos and photos.
+const DOOR_STYLES = [[/porch_s/, '#4a2a1e', 'six'], [/f_corr_toilet|f_cubicles|blk_mid|north_b2/, '#f2f2ee', 'flush'],
+  [/mosque_rear|upx_ext_s/, '#f4f4f2', 'upvc'], [/./, '#4a2a1e', 'panel']];
+// single doors hinge at the low-coordinate jamb unless the footage shows otherwise (by parent wall)
+const HINGE_AT_MAX = new Set(['wall_stair_head']);
+const matCache = new Map();
+const mat = (c, extra = {}) => { const k = c + JSON.stringify(extra);
+  if (!matCache.has(k)) matCache.set(k, new THREE.MeshStandardMaterial({ color: c, roughness: 0.55, side: THREE.DoubleSide, ...extra })); return matCache.get(k); };
+const boxAt = (g, c, w, h, d, x, y, z, extra) => { const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(c, extra)); b.position.set(x, y, z); g.add(b); return b; };
+function makeLeaf(w, h, colour, style) {          // local frame: hinge at x = 0, leaf along +x, bottom at y = 0
+  const g = new THREE.Group(), white = colour !== '#4a2a1e', raised = white ? '#e6e6e0' : '#5c3626';
+  boxAt(g, colour, w, h, 0.045, w / 2, h / 2, 0);
+  const panel = (x0, x1, y0, y1, c = raised, extra) => { for (const z of [-0.026, 0.026]) boxAt(g, c, x1 - x0, y1 - y0, 0.008, (x0 + x1) / 2, (y0 + y1) / 2, z, extra); };
+  if (style === 'six') for (const [x0, x1] of [[0.07, w / 2 - 0.04], [w / 2 + 0.04, w - 0.07]]) for (const [y0, y1] of [[0.12, 0.72], [0.86, 1.3], [1.44, h - 0.12]]) panel(x0, x1, y0, y1);
+  if (style === 'panel') for (const [y0, y1] of [[0.15, 0.85], [1.0, h - 0.15]]) panel(0.08, w - 0.08, y0, y1);
+  if (style === 'glazed') { panel(0.08, w - 0.08, 0.12, 0.8); for (let i = 0; i < 2; i++) for (let j = 0; j < 3; j++) {
+    const x0 = 0.08 + i * (w - 0.16) / 2 + 0.02, x1 = 0.08 + (i + 1) * (w - 0.16) / 2 - 0.02, y0 = 0.95 + j * (h - 1.07) / 3 + 0.02, y1 = 0.95 + (j + 1) * (h - 1.07) / 3 - 0.02;
+    panel(x0, x1, y0, y1, '#c9dbe3', { transparent: true, opacity: 0.55 }); } }
+  if (style === 'upvc') panel(0.1, w - 0.1, h * 0.42, h - 0.1, '#c9dbe3', { transparent: true, opacity: 0.45 });
+  for (const z of [-0.045, 0.045]) boxAt(g, white ? '#b8bcc0' : '#b08d3c', 0.12, 0.025, 0.025, w - 0.12, 1.0, z);
+  return g;
+}
+function buildDoor(node, bvh) {
+  // Built in the door's own frame (x along the wall, z through it, y up) so walls at any angle work (e.g. the hall's 45-degree splays).
+  const toLocal = new THREE.Matrix4().copy(node.matrixWorld).invert(), box = new THREE.Box3();
+  node.traverse((m) => { if (m.isMesh && !/^cutout/.test(m.name)) { m.geometry.computeBoundingBox();
+    box.union(m.geometry.boundingBox.clone().applyMatrix4(new THREE.Matrix4().multiplyMatrices(toLocal, m.matrixWorld))); } });
+  if (box.isEmpty() || heldOpen(node)) return;                                   // plain openings and held-open doors get no leaf
+  const c = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3()), cw = c.clone().applyMatrix4(node.matrixWorld);
+  if (cw.x < -0.5 || cw.x > 46.5 || cw.z < -4.3 || cw.z > 8.5) return;               // neighbouring houses keep their Pascal doors
+  node.visible = false;
+  const W = size.x, T = size.z, H = size.y, y0 = box.min.y;
+  const wall = node.parent?.name ?? '', [, colour, style0] = DOOR_STYLES.find(([re]) => re.test(wall));
+  const n = W - 0.1 >= 0.98 ? 2 : 1, style = /f_offices_corr/.test(wall) && n === 1 ? 'glazed' : style0;
+  const fc = colour !== '#4a2a1e' ? '#f4f4f2' : '#3b2219';
+  const root = new THREE.Group(); root.matrixAutoUpdate = false; root.matrix.copy(node.matrixWorld); root.userData.dynamicLook = true; scene.add(root);
+  const a0 = box.min.x, a1 = box.max.x, across = c.z;
+  const put = (a, y, w, h) => boxAt(root, fc, w, h, T + 0.02, a, y, across);
+  put(a0 + 0.025, y0 + H / 2, 0.05, H); put(a1 - 0.025, y0 + H / 2, 0.05, H); put((a0 + a1) / 2, y0 + H - 0.025, W, 0.05);
+  // swing into whichever side has more free space (BVH ray casts across the opening at waist height, in world space)
+  const nrmW = new THREE.Vector3(0, 0, 1).transformDirection(node.matrixWorld);
+  const free = (sgn) => { const o = new THREE.Vector3(c.x, y0 + 1.0, c.z + sgn * (T / 2 + 0.03)).applyMatrix4(node.matrixWorld);
+    const hit = bvh.raycastFirst(new THREE.Ray(o, nrmW.clone().multiplyScalar(sgn)), THREE.DoubleSide); return hit ? hit.distance : 9; };
+  const side = free(1) >= free(-1) ? 1 : -1, lw = (W - 0.1) / n - 0.004, lh = H - 0.065;
+  for (let k = 0; k < n; k++) {
+    const flip = n === 1 && HINGE_AT_MAX.has(wall), hingeA = (k === 0) !== flip ? a0 + 0.05 : a1 - 0.05, acrossPos = across + side * (T / 2 - 0.03);
+    const base = (k === 0) !== flip ? 0 : Math.PI;
+    const tipAcross = (phi) => -Math.sin(base + phi);
+    const open = Math.sign(tipAcross(1.4)) === side ? 1.45 : -1.45;
+    const pivot = new THREE.Group(); pivot.position.set(hingeA, y0 + 0.005, acrossPos); pivot.rotation.y = base;
+    pivot.add(makeLeaf(lw, lh, colour, style)); root.add(pivot);
+    doors.push({ pivot, base, open, angle: 0, target: 0 });
+  }
+}
+
+// ---- UI ----
+const placesEl = document.getElementById('places');
+for (const p of PLACES) { const b = document.createElement('button'); b.textContent = p.name; b.onclick = () => goTo(p); placesEl.append(b); }
+function goTo(p) { player.pos.set(p.at[0], p.at[1] + EYE, p.at[2]); player.vel.set(0, 0, 0); player.yaw = p.yaw ?? 0; player.pitch = p.pitch ?? 0; }
+let running = false;
+const runBtn = document.getElementById('run');
+runBtn.onclick = () => { running = !running; runBtn.textContent = running ? 'Run' : 'Walk'; runBtn.classList.toggle('on', running); };
+const doorBtn = document.getElementById('doors');
+function setDoors(open) { for (const d of doors) d.target = open ? d.open : 0; doorBtn.classList.toggle('on', open); doorBtn.textContent = open ? 'Close doors' : 'Open doors'; }
+doorBtn.onclick = () => setDoors(!doorBtn.classList.contains('on'));
+
+// ---- input: touch joystick + look, keyboard + mouse ----
+const move = { x: 0, y: 0 }, keys = new Set();
+const knob = document.getElementById('knob');
+let stickId = null, stickOrigin = null, lookId = null, lookLast = null;
+const onUi = (t) => t.target.closest && t.target.closest('button');
+addEventListener('touchstart', (e) => {
+  for (const t of e.changedTouches) {
+    if (onUi(t)) continue;
+    if (t.clientX < innerWidth * 0.45 && stickId === null) { stickId = t.identifier; stickOrigin = [t.clientX, t.clientY]; }
+    else if (lookId === null) { lookId = t.identifier; lookLast = [t.clientX, t.clientY]; }
+  }
+}, { passive: true });
+addEventListener('touchmove', (e) => {
+  for (const t of e.changedTouches) {
+    if (t.identifier === stickId) {
+      let dx = t.clientX - stickOrigin[0], dy = t.clientY - stickOrigin[1]; const r = Math.hypot(dx, dy), max = 55;
+      if (r > max) { dx *= max / r; dy *= max / r; }
+      move.x = dx / max; move.y = -dy / max; knob.style.transform = `translate(${dx}px,${dy}px)`;
+    } else if (t.identifier === lookId) {
+      look(t.clientX - lookLast[0], t.clientY - lookLast[1], 0.005); lookLast = [t.clientX, t.clientY];
+    }
+  }
+}, { passive: true });
+const endTouch = (e) => { for (const t of e.changedTouches) {
+  if (t.identifier === stickId) { stickId = null; move.x = move.y = 0; knob.style.transform = ''; }
+  if (t.identifier === lookId) lookId = null; } };
+addEventListener('touchend', endTouch); addEventListener('touchcancel', endTouch);
+let dragging = false;
+renderer.domElement.addEventListener('mousedown', () => (dragging = true));
+addEventListener('mouseup', () => (dragging = false));
+addEventListener('mousemove', (e) => { if (dragging) look(e.movementX, e.movementY, 0.004); });
+addEventListener('keydown', (e) => keys.add(e.code)); addEventListener('keyup', (e) => keys.delete(e.code));
+function look(dx, dy, s) { player.yaw -= dx * s; player.pitch = Math.max(-1.35, Math.min(1.35, player.pitch - dy * s)); }
+addEventListener('resize', () => { camera.fov = fovFor(); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); post.composer?.setSize(innerWidth, innerHeight); });
+
+// ---- capsule movement against BVH collider ----
+const seg = new THREE.Line3(), box = new THREE.Box3(), triPt = new THREE.Vector3(), capPt = new THREE.Vector3(), tmp = new THREE.Vector3();
+function step(dt) {
+  let mx = move.x, my = move.y;
+  if (keys.has('KeyW') || keys.has('ArrowUp')) my += 1; if (keys.has('KeyS') || keys.has('ArrowDown')) my -= 1;
+  if (keys.has('KeyD')) mx += 1; if (keys.has('KeyA')) mx -= 1;
+  if (keys.has('ArrowLeft')) player.yaw += 1.8 * dt; if (keys.has('ArrowRight')) player.yaw -= 1.8 * dt;
+  const speed = (running || keys.has('ShiftLeft') || keys.has('ShiftRight')) ? RUN : WALK;
+  const len = Math.hypot(mx, my); if (len > 1) { mx /= len; my /= len; }
+  // yaw 0 faces +x; forward = (cos yaw, 0, -sin yaw) in this frame, right = (sin yaw, 0, cos yaw)
+  const fx = Math.cos(player.yaw), fz = -Math.sin(player.yaw), rx = Math.sin(player.yaw), rz = Math.cos(player.yaw);
+  player.vel.x = (fx * my + rx * mx) * speed; player.vel.z = (fz * my + rz * mx) * speed;
+  player.vel.y = player.grounded ? -0.05 : player.vel.y + GRAVITY * dt;   // tiny stick-down so slopes and stairs are climbable
+  player.pos.addScaledVector(player.vel, dt);
+  if (!collider) return;
+  seg.start.copy(player.pos); seg.end.copy(player.pos).y -= SEG;
+  box.makeEmpty(); box.expandByPoint(seg.start); box.expandByPoint(seg.end); box.min.addScalar(-RADIUS); box.max.addScalar(RADIUS);
+  collider.geometry.boundsTree.shapecast({
+    intersectsBounds: (b) => b.intersectsBox(box),
+    intersectsTriangle: (tri) => {
+      const d = tri.closestPointToSegment(seg, triPt, capPt);
+      if (d < RADIUS) { const depth = RADIUS - d; const dir = capPt.sub(triPt).normalize(); seg.start.addScaledVector(dir, depth); seg.end.addScaledVector(dir, depth); }
+    },
+  });
+  tmp.subVectors(seg.start, player.pos);
+  player.grounded = tmp.y > Math.abs(dt * player.vel.y * 0.25);
+  player.pos.copy(seg.start);
+  if (player.grounded) player.vel.y = 0;
+  if (player.pos.y < -20) goTo(PLACES[0]);
+}
+
+const whereEl = document.getElementById('where');
+function where() {
+  const { x, z } = player.pos;
+  const y = player.pos.y - EYE;
+  for (const [n, x0, x1, z0, z1, y0 = -9, y1 = 99] of ZONES) if (x >= x0 && x < x1 && z >= z0 && z < z1 && y >= y0 - 0.3 && y < y1) return n;
+  return 'Outside';
+}
+const clock = new THREE.Clock();
+let lastWhere = '';
+renderer.setAnimationLoop(() => {
+  const dt = Math.min(clock.getDelta(), 0.05);
+  for (let i = 0; i < 4; i++) step(dt / 4);
+  for (const d of doors) if (d.angle !== d.target) { d.angle += (d.target - d.angle) * Math.min(1, dt * 5); if (Math.abs(d.target - d.angle) < 0.002) d.angle = d.target; d.pivot.rotation.y = d.base + d.angle; }
+  camera.position.copy(player.pos);
+  camera.rotation.set(player.pitch, player.yaw - Math.PI / 2, 0);
+  const w = where(); if (w !== lastWhere) { whereEl.textContent = w; lastWhere = w; }
+  if (post.composer && post.on) post.composer.render(dt); else renderer.render(scene, camera);
+});
+</script>
+</body>
+</html>

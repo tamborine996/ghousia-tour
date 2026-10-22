@@ -1,0 +1,47 @@
+{
+ "_about": "Realtime look for the tour (viewer/look.js), ported from tools/blender_interior.py's colour rules. Pascal/builder colours (sRGB hex, matched within 'tolerance' per channel) map to materials. 'tile' = viewer/tex/<name>.jpg made by tools/make_tour_textures.py; 'size' = metres per tile repeat (world-space box projection). 'tinted' tiles carry their own colour; grey tiles multiply the original colour. 'only' limits a rule to meshes under matching Pascal element names.",
+ "tolerance": 10,
+ "renderer": { "toneMapping": "AgX", "exposure": 1.0, "environmentIntensity": 0.55, "hemisphere": 0.35, "ambient": 0.05, "sun": 1.8 },
+ "tiles": {
+  "pine_v": { "src": "stained_pine_v", "tint": "#c98f52", "sat": 1.15, "px": 1024, "note": "dado: upright tongue-and-groove boards ~0.09 m" },
+  "mahogany": { "src": "oak_veneer_01", "tint": "#5a2e22", "sat": 1.2, "contrast": 0.45, "px": 1024 },
+  "lightwood": { "src": "ash_veneer", "tint": "#a88a63", "px": 1024 },
+  "plaster": { "src": "beige_wall_002", "grey": 0.97, "contrast": 0.6, "px": 1024 },
+  "ceiling": { "src": "ceiling_interior", "grey": 0.97, "contrast": 0.7, "px": 1024 },
+  "fabric": { "src": "cotton_jersey", "grey": 0.95, "contrast": 1.0, "px": 512 },
+  "carpet_red": { "file": "carpet_hi/saff_red_hi.png", "px": 2400 },
+  "carpet_navy": { "file": "carpet_hi/saff_navy_hi.png", "px": 2400 }
+ },
+ "post": {
+  "_about": "screen-space ambient occlusion (N8AO) for contact shadows, and bloom for the LED strips and panels; the FX button toggles them",
+  "aoQuality": "Medium",
+  "ao": { "aoRadius": 1.2, "distanceFalloff": 1.0, "intensity": 4.0, "halfRes": true, "depthAwareUpsampling": true, "gammaCorrection": false },
+  "bloom": { "strength": 0.12, "radius": 0.2, "threshold": 4.0 }
+ },
+ "carpets": { "_about": "the model's 480 x 280 saff tiles are swapped for these (same 1.2 x 0.7 m layout, same UV transform)", "red": "carpet_red", "navy": "carpet_navy", "value": 0.4 },
+ "rules": [
+  { "colours": ["#39e66b", "#2bd24a"], "emissive": "#0fd84a", "intensity": 3.0 },
+  { "colours": ["#fbfbf6", "#fbfbf4", "#fafaf4"], "tolerance": 1, "only": "^imesh_", "emissive": "#fff6ea", "intensity": 5.0 },
+  { "colours": ["#e2271c"], "emissive": "#ff2a14", "intensity": 2.0 },
+  { "colours": ["#1f8a3c"], "emissive": "#22c55e", "intensity": 1.5 },
+  { "colours": ["#d9b77e"], "tile": "pine_v", "tinted": true, "size": 0.65, "roughness": 0.55 },
+  { "colours": ["#4a2a1e", "#5c3626", "#3b2219", "#5b3a28", "#4a2418", "#5a321f", "#3b1f1a", "#2a1712", "#6b4430", "#4f2b2b", "#5a2a1c", "#7b3b28", "#5a3a2a", "#3b2a1c", "#5a2a1e", "#6b3a2e", "#5e3226", "#3a221c", "#2f1a12"], "tile": "mahogany", "tinted": true, "size": 0.6, "roughness": 0.45 },
+  { "colours": ["#a0703f", "#c49a6c", "#7a4a2c", "#a88a63", "#8a6a4a", "#7a5a3a", "#8a7560", "#7d6a55", "#9a8b74"], "tile": "lightwood", "tinted": true, "size": 0.6, "roughness": 0.55 },
+  { "colours": ["#f3f2ee", "#f2efe6", "#f6f1e2", "#efefea"], "only": "^ceiling_", "tile": "ceiling", "size": 1.2, "roughness": 0.9 },
+  { "colours": ["#f1efe6"], "only": "^wall_", "tile": "plaster", "colour": "#efe6c8", "size": 1.6, "roughness": 0.8, "note": "Pascal's near-white hall wall paint -> the hall cream (as in the renders)" },
+  { "colours": ["#efe6c8", "#ebdfac", "#e8dca6", "#e9e5db", "#ebe5d8", "#f1efe6", "#f3f2ee", "#f2efe6", "#d9c86e", "#d8d1c2", "#ebe7d8"], "tile": "plaster", "size": 1.6, "roughness": 0.85 },
+  { "colours": ["#f4f4f2", "#f2f2ef", "#e8e8e4", "#f0f0ec", "#ecedee", "#e3e5e7", "#d9d9d6", "#ecece9", "#f1f1ee", "#f4f4f4", "#e2e2de", "#d6d6d0"], "roughness": 0.3, "envMapIntensity": 0.9 },
+  { "colours": ["#0c0c0e", "#120707", "#111111", "#111214", "#141414", "#151515", "#1a1a1a", "#1d1d1d"], "roughness": 0.18, "envMapIntensity": 1.0 },
+  { "colours": ["#e4f2f9", "#c9dbe3", "#d6e8ef", "#cfe3ea", "#cfe3ee", "#cfe0e8", "#bcd3de"], "glass": true },
+  { "colours": ["#7a7d82"], "tile": "fabric", "size": 0.25, "roughness": 0.95 },
+  { "colours": ["#9b1b22", "#8e1b26"], "tile": "fabric", "size": 0.3, "roughness": 0.9, "note": "red velvet" },
+  { "colours": ["#b4161e", "#c4161c", "#b3131b"], "roughness": 0.45 },
+  { "colours": ["#d8b43a", "#c9a227", "#b08d3c", "#b8902e"], "metalness": 1.0, "roughness": 0.3 },
+  { "colours": ["#ebe7df", "#c8ccce"], "roughness": 0.35, "colour": "#f1f0ec", "note": "uPVC" }
+ ],
+ "lights": {
+  "_about": "a few unshadowed point lights for the falloff of the ceiling panels (model frame x, y, z); intensity in candela",
+  "colour": "#fff6ec", "distance": 9, "decay": 2,
+  "points": [[10.5, 2.5, 0, 7], [14.5, 2.5, 0, 7], [18.5, 2.5, 0, 7], [22.5, 2.5, 0, 7], [4.5, 2.4, -0.2, 3], [27.5, 4.9, -1.0, 6], [32.0, 4.9, -1.0, 6]]
+ }
+}
