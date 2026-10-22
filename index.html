@@ -18,19 +18,67 @@
   #stick { position:fixed; left:22px; bottom:calc(26px + env(safe-area-inset-bottom,0)); width:120px; height:120px; border-radius:50%;
     background:rgba(255,255,255,.08); border:2px solid rgba(255,255,255,.25); pointer-events:none; }
   #knob { position:absolute; left:35px; top:35px; width:50px; height:50px; border-radius:50%; background:rgba(255,255,255,.45); }
-  #where { position:fixed; left:50%; top:calc(56px + env(safe-area-inset-top,0)); transform:translateX(-50%); background:var(--panel); padding:4px 10px; border-radius:8px; font-size:13px; opacity:.9; white-space:nowrap; }
-  #loading { position:fixed; inset:0; display:grid; place-items:center; background:#1b1d21; text-align:center; padding:24px; }
-  #loading small { display:block; opacity:.7; margin-top:6px; }
+  /* guided route: Back | where you are + next stop | Next */
+  #guide { position:fixed; left:50%; top:calc(52px + env(safe-area-inset-top,0)); transform:translateX(-50%); display:flex; align-items:center; gap:6px; }
+  #guide .here { background:var(--panel); backdrop-filter:blur(6px); padding:6px 12px; border-radius:16px; text-align:center; max-width:44vw; }
+  #where { display:block; font-size:14px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #nextName { display:block; font-size:11px; opacity:.75; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #guide button { padding:10px 14px; font-weight:600; }
+  #next { background:var(--accent); }
+  #stickLabel { position:absolute; left:-20px; right:-20px; top:-26px; text-align:center; font-size:13px; font-weight:600; text-shadow:0 1px 3px #000; transition:opacity .6s; }
+  #stick.pulse { animation:pulse 1.6s ease-out infinite; }
+  @keyframes pulse { 0% { box-shadow:0 0 0 0 rgba(43,138,95,.75); } 100% { box-shadow:0 0 0 24px rgba(43,138,95,0); } }
+  #lookHint { position:fixed; right:16px; top:42%; width:120px; display:flex; flex-direction:column; align-items:center; gap:4px; pointer-events:none; font-size:13px; font-weight:600; text-align:center; text-shadow:0 1px 3px #000; transition:opacity .6s; }
+  #lookHint svg { width:72px; height:48px; animation:sway 2.2s ease-in-out infinite; }
+  @keyframes sway { 0%,100% { transform:translateX(-10px); } 50% { transform:translateX(10px); } }
+  .gone { opacity:0 !important; }
+  #fade { position:fixed; inset:0; background:#000; opacity:0; pointer-events:none; transition:opacity .25s; }
+  /* welcome card: shown while the model loads; Start when ready; the ? button brings it back */
+  #intro { position:fixed; inset:0; z-index:20; display:grid; place-items:center; padding:18px; background:rgba(16,18,21,.95); overflow:auto; }
+  #intro[hidden] { display:none; }
+  #intro .card { width:100%; max-width:430px; }
+  #intro h1 { font-size:22px; margin:0; font-weight:650; }
+  #intro .sub { opacity:.7; font-size:13px; margin:2px 0 14px; }
+  #intro .step { display:grid; grid-template-columns:60px 1fr; gap:14px; align-items:center; margin:14px 0; }
+  #intro .step svg { width:60px; height:60px; color:var(--ink); }
+  #intro .step b { display:block; font-size:16px; margin-bottom:2px; }
+  #intro .step span { opacity:.82; font-size:14px; line-height:1.35; }
+  #intro .more { opacity:.72; font-size:13px; line-height:1.45; margin:16px 0 18px; }
+  #start { width:100%; padding:15px; font-size:17px; font-weight:650; background:var(--accent); border-radius:14px; }
+  #start:disabled { background:#34373c; color:#c9c9c9; }
+  #help { width:40px; height:40px; padding:0; font-size:18px; font-weight:700; align-self:flex-end; }
   #hint { position:fixed; left:50%; bottom:calc(160px + env(safe-area-inset-bottom,0)); transform:translateX(-50%); background:var(--panel); padding:6px 12px; border-radius:8px; font-size:13px; transition:opacity 1s; text-align:center; }
 </style>
 </head>
 <body>
 <div id="places"></div>
-<div id="where"></div>
-<div id="stick"><div id="knob"></div></div>
-<div id="tools"><button id="fx" hidden>FX</button><button id="look" hidden>Real</button><button id="run">Walk</button><button id="doors">Open doors</button></div>
-<div id="hint">Left thumb: walk · Right thumb: look<br>Desktop: WASD + drag · Shift to run</div>
-<div id="loading"><div>Loading Ghousia Masjid…<small id="pct">0%</small><small>Concept model · not surveyed</small></div></div>
+<div id="guide"><button id="prev" aria-label="Previous stop">&lsaquo; Back</button>
+  <div class="here"><span id="where">Loading…</span><span id="nextName"></span></div>
+  <button id="next" aria-label="Next stop">Next &rsaquo;</button></div>
+<div id="stick"><span id="stickLabel">Walk: drag here</span><div id="knob"></div></div>
+<div id="lookHint"><svg viewBox="0 0 72 48" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M10 22 Q36 6 62 22"/><path d="M10 22 l8 0 M10 22 l3 -7"/><path d="M62 22 l-8 0 M62 22 l-3 -7"/><circle cx="36" cy="34" r="7" fill="currentColor" stroke="none"/></svg>
+  <span id="lookText">Drag here to look around</span></div>
+<div id="tools"><button id="help" aria-label="How to move around">?</button><button id="fx" hidden>Shadows: off</button><button id="look" hidden>Look: real</button><button id="run">Speed: walk</button><button id="doors">Open doors</button></div>
+<div id="hint" class="gone"></div>
+<div id="fade"></div>
+<div id="intro"><div class="card">
+  <h1>Ghousia Masjid</h1>
+  <div class="sub">Walk-around tour &middot; concept model from phone video, not surveyed</div>
+  <div class="step"><svg viewBox="0 0 60 60" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="30" cy="30" r="25" stroke-opacity=".4"/><circle cx="30" cy="21" r="10" fill="currentColor" fill-opacity=".85" stroke="none"/><path d="M30 50 V36 M24 42 L30 36 L36 42"/></svg>
+    <div><b data-touch="Walk: left thumb" data-mouse="Walk: W A S D keys">Walk: left thumb</b>
+      <span data-touch="Put your thumb on the left side of the screen and slide it the way you want to go." data-mouse="Or the arrow keys. Hold Shift to go faster.">Put your thumb on the left side of the screen and slide it the way you want to go.</span></div></div>
+  <div class="step"><svg viewBox="0 0 60 60" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M8 28 Q30 12 52 28"/><path d="M8 28 l8 0 M8 28 l3 -7"/><path d="M52 28 l-8 0 M52 28 l-3 -7"/><circle cx="30" cy="40" r="7" fill="currentColor" stroke="none"/></svg>
+    <div><b data-touch="Look around: right thumb" data-mouse="Look around: drag the mouse">Look around: right thumb</b>
+      <span data-touch="Drag on the right side of the screen to turn and look up or down." data-mouse="Click and drag anywhere to turn and look up or down.">Drag on the right side of the screen to turn and look up or down.</span></div></div>
+  <div class="step"><svg viewBox="0 0 60 60"><rect x="4" y="17" width="52" height="26" rx="13" fill="#2b8a5f"/>
+      <path d="M27 23 L34 30 L27 37" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <div><b>Easiest: tap Next</b><span>The green <b style="display:inline">Next &rsaquo;</b> button at the top takes you through the building room by room: street, entrance, corridor, prayer hall, stairs, upstairs.</span></div></div>
+  <div class="more">Tap a place name along the top to jump straight there. &ldquo;Open doors&rdquo; opens every door. The <b>?</b> button shows this again.</div>
+  <button id="start" disabled>Loading&hellip; <span id="pct">0%</span></button>
+</div></div>
 
 <script type="importmap">
 { "imports": {
@@ -179,16 +227,16 @@ new GLTFLoader().load(`model.glb?v=${Date.now()}`, (gltf) => {
   }
   setDoors(false);
   goTo(PLACES[0]);
-  document.getElementById('loading').remove();
-  if (manifest) loadReal(manifest); else setTimeout(() => (document.getElementById('hint').style.opacity = 0), 6000);
-}, (e) => { if (e.total) document.getElementById('pct').textContent = Math.round((e.loaded / e.total) * 100) + '%'; },
-   (err) => { document.getElementById('pct').textContent = 'Could not load model: ' + err.message; });
+  startBtn.disabled = false; startBtn.textContent = 'Start the tour';
+  if (manifest) loadReal(manifest);
+}, (e) => { const el = document.getElementById('pct'); if (e.total && el) el.textContent = Math.round((e.loaded / e.total) * 100) + '%'; },
+   (err) => { startBtn.textContent = 'Could not load the model: ' + err.message; });
 });
 
 // Baked meshes are merged per atlas (three draw calls) and drawn unlit: the atlases already hold Blender's light and tone mapping.
 function loadReal(manifest) {
   const hint = document.getElementById('hint');
-  hint.textContent = 'Loading the real look…';
+  hint.textContent = 'Loading the photo-real look…'; hint.classList.remove('gone');
   new GLTFLoader().load(`baked/${lowMem ? 'baked_2k' : 'baked'}.glb?v=${encodeURIComponent(manifest.created)}`, (g) => {
     g.scene.updateMatrixWorld(true);
     const byMat = new Map(), group = new THREE.Group();
@@ -211,17 +259,17 @@ function loadReal(manifest) {
     real.baked = group; scene.add(group);
     const btn = document.getElementById('look'); btn.hidden = false; btn.onclick = () => setLook(!real.on);
     setLook(true);
-    hint.textContent = 'Real look on (button on the right switches to Simple)';
-    setTimeout(() => (hint.style.opacity = 0), 5000);
-  }, (e) => { if (e.total) hint.textContent = `Loading the real look… ${Math.round((e.loaded / e.total) * 100)}%`; },
-     (err) => { hint.textContent = 'Real look unavailable: ' + err.message; setTimeout(() => (hint.style.opacity = 0), 6000); });
+    hint.textContent = 'Photo-real look ready';
+    setTimeout(() => hint.classList.add('gone'), 3000);
+  }, (e) => { if (e.total) hint.textContent = `Loading the photo-real look… ${Math.round((e.loaded / e.total) * 100)}%`; },
+     (err) => { hint.textContent = 'Photo-real look unavailable: ' + err.message; setTimeout(() => hint.classList.add('gone'), 6000); });
 }
 // FX: ambient occlusion + bloom through the composer (look.js setupPost); off = plain render (lighter for weak phones)
 const post = { composer: null, on: false }; window.__tour.post = post;
-function setFx(on) { post.on = on; const b = document.getElementById('fx'); b.textContent = on ? 'FX on' : 'FX off'; b.classList.toggle('on', on); }
+function setFx(on) { post.on = on; const b = document.getElementById('fx'); b.textContent = on ? 'Shadows: on' : 'Shadows: off'; b.classList.toggle('on', on); }
 function setLook(on) {
   real.on = on; for (const o of real.replaced) o.visible = !on; if (real.baked) real.baked.visible = on;
-  const btn = document.getElementById('look'); btn.textContent = on ? 'Real' : 'Simple'; btn.classList.toggle('on', on);
+  const btn = document.getElementById('look'); btn.textContent = on ? 'Look: real' : 'Look: simple'; btn.classList.toggle('on', on);
 }
 
 // ---- doors: Pascal's exported leaves are static and uncoloured, so the tour builds its own frame + leaves that swing ----
@@ -283,10 +331,36 @@ function buildDoor(node, bvh) {
 // ---- UI ----
 const placesEl = document.getElementById('places');
 for (const p of PLACES) { const b = document.createElement('button'); b.textContent = p.name; b.onclick = () => goTo(p); placesEl.append(b); }
-function goTo(p) { player.pos.set(p.at[0], p.at[1] + EYE, p.at[2]); player.vel.set(0, 0, 0); player.yaw = p.yaw ?? 0; player.pitch = p.pitch ?? 0; }
+let stop = 0;                                                   // last route stop visited (PLACES are in walking order)
+function goTo(p) { player.pos.set(p.at[0], p.at[1] + EYE, p.at[2]); player.vel.set(0, 0, 0); player.yaw = p.yaw ?? 0; player.pitch = p.pitch ?? 0;
+  stop = PLACES.indexOf(p); showNext(); }
+const nextNameEl = document.getElementById('nextName');
+function showNext() { nextNameEl.textContent = stop < PLACES.length - 1 ? `Next: ${PLACES[stop + 1].name}` : 'End of the tour'; }
+// Next/Back go from the nearest stop to where you are now (so they still make sense after walking freely), with a quick fade.
+function nearestStop() { let best = 0, bd = Infinity;
+  PLACES.forEach((p, i) => { const d = Math.hypot(p.at[0] - player.pos.x, (p.at[1] + EYE - player.pos.y) * 3, p.at[2] - player.pos.z); if (d < bd) { bd = d; best = i; } });
+  return bd < 1.5 ? best : stop; }
+const fadeEl = document.getElementById('fade');
+function goStop(i) { if (i < 0 || i >= PLACES.length) return; fadeEl.style.opacity = 1;
+  setTimeout(() => { goTo(PLACES[i]); fadeEl.style.opacity = 0; }, 260); }
+document.getElementById('next').onclick = () => goStop(nearestStop() + 1);
+document.getElementById('prev').onclick = () => goStop(nearestStop() - 1);
+// control hints: pulse the walk area and show "drag to look" until each has been used once
+const stickEl = document.getElementById('stick'), stickLabel = document.getElementById('stickLabel'), lookHint = document.getElementById('lookHint');
+const usedOnce = new Set();
+function used(k) { if (usedOnce.has(k)) return; usedOnce.add(k);
+  if (k === 'walk') { stickEl.classList.remove('pulse'); setTimeout(() => stickLabel.classList.add('gone'), 1500); }
+  if (k === 'look') lookHint.classList.add('gone'); }
+function showHints() { usedOnce.clear(); stickEl.classList.add('pulse'); stickLabel.classList.remove('gone'); lookHint.classList.remove('gone'); }
+const mouse = matchMedia('(pointer: fine)').matches && !('ontouchstart' in window);
+if (mouse) { document.getElementById('stick').hidden = true; document.getElementById('lookText').textContent = 'Drag to look around';
+  for (const el of document.querySelectorAll('[data-mouse]')) el.textContent = el.dataset.mouse; }
+const intro = document.getElementById('intro'), startBtn = document.getElementById('start');
+startBtn.onclick = () => { intro.hidden = true; showHints(); };
+document.getElementById('help').onclick = () => { intro.hidden = false; };
 let running = false;
 const runBtn = document.getElementById('run');
-runBtn.onclick = () => { running = !running; runBtn.textContent = running ? 'Run' : 'Walk'; runBtn.classList.toggle('on', running); };
+runBtn.onclick = () => { running = !running; runBtn.textContent = running ? 'Speed: run' : 'Speed: walk'; runBtn.classList.toggle('on', running); };
 const doorBtn = document.getElementById('doors');
 function setDoors(open) { for (const d of doors) d.target = open ? d.open : 0; doorBtn.classList.toggle('on', open); doorBtn.textContent = open ? 'Close doors' : 'Open doors'; }
 doorBtn.onclick = () => setDoors(!doorBtn.classList.contains('on'));
@@ -295,12 +369,12 @@ doorBtn.onclick = () => setDoors(!doorBtn.classList.contains('on'));
 const move = { x: 0, y: 0 }, keys = new Set();
 const knob = document.getElementById('knob');
 let stickId = null, stickOrigin = null, lookId = null, lookLast = null;
-const onUi = (t) => t.target.closest && t.target.closest('button');
+const onUi = (t) => t.target.closest && t.target.closest('button, #intro');
 addEventListener('touchstart', (e) => {
   for (const t of e.changedTouches) {
     if (onUi(t)) continue;
-    if (t.clientX < innerWidth * 0.45 && stickId === null) { stickId = t.identifier; stickOrigin = [t.clientX, t.clientY]; }
-    else if (lookId === null) { lookId = t.identifier; lookLast = [t.clientX, t.clientY]; }
+    if (t.clientX < innerWidth * 0.45 && stickId === null) { stickId = t.identifier; stickOrigin = [t.clientX, t.clientY]; used('walk'); }
+    else if (lookId === null) { lookId = t.identifier; lookLast = [t.clientX, t.clientY]; used('look'); }
   }
 }, { passive: true });
 addEventListener('touchmove', (e) => {
@@ -319,10 +393,10 @@ const endTouch = (e) => { for (const t of e.changedTouches) {
   if (t.identifier === lookId) lookId = null; } };
 addEventListener('touchend', endTouch); addEventListener('touchcancel', endTouch);
 let dragging = false;
-renderer.domElement.addEventListener('mousedown', () => (dragging = true));
+renderer.domElement.addEventListener('mousedown', () => { dragging = true; used('look'); });
 addEventListener('mouseup', () => (dragging = false));
 addEventListener('mousemove', (e) => { if (dragging) look(e.movementX, e.movementY, 0.004); });
-addEventListener('keydown', (e) => keys.add(e.code)); addEventListener('keyup', (e) => keys.delete(e.code));
+addEventListener('keydown', (e) => { keys.add(e.code); if (/^(Key[WASD]|Arrow)/.test(e.code)) used('walk'); }); addEventListener('keyup', (e) => keys.delete(e.code));
 function look(dx, dy, s) { player.yaw -= dx * s; player.pitch = Math.max(-1.35, Math.min(1.35, player.pitch - dy * s)); }
 addEventListener('resize', () => { camera.fov = fovFor(); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); post.composer?.setSize(innerWidth, innerHeight); });
 
